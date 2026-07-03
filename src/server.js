@@ -1,14 +1,19 @@
 import http from "node:http";
+import { WebSocketServer } from "ws";
 import { spawnChrome, waitForChrome } from "./chrome.js";
 import { cdpProxy, isProxiedPath } from "./proxy.js";
 import { handleAppRoute } from "./routes.js";
+import { attachScreencast } from "./screencast.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
+const SCREENCAST_RE = /^\/api\/tabs\/([^/]+)\/screencast$/;
 
 spawnChrome();
 await waitForChrome();
 console.log("Chrome CDP prêt.");
+
+const screencastWss = new WebSocketServer({ noServer: true });
 
 const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
@@ -24,7 +29,12 @@ const server = http.createServer((req, res) => {
 
 server.on("upgrade", (req, socket, head) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
-  if (isProxiedPath(pathname)) {
+  const screencastMatch = pathname.match(SCREENCAST_RE);
+  if (screencastMatch) {
+    screencastWss.handleUpgrade(req, socket, head, (clientWs) => {
+      attachScreencast(clientWs, screencastMatch[1]);
+    });
+  } else if (isProxiedPath(pathname)) {
     cdpProxy.ws(req, socket, head);
   } else {
     socket.destroy();
