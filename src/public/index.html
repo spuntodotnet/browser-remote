@@ -117,6 +117,43 @@
     cursor: pointer;
   }
 
+  /* Barre d'outils : précédent/suivant/reload + adresse + devtools */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--tab-active);
+    border-top: 1px solid #000;
+    flex: none;
+  }
+  #toolbar button {
+    flex: none;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--bar-fg);
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  #toolbar button:hover:not(:disabled) { background: var(--tab-hover); }
+  #toolbar button:disabled { color: var(--bar-fg-dim); opacity: 0.4; cursor: default; }
+  #toolbar #devtools-btn { width: auto; padding: 0 10px; font-size: 12px; font-weight: 600; gap: 6px; }
+  #address {
+    flex: 1;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: #0000002e;
+    color: var(--bar-fg);
+    font-size: 13px;
+    outline: none;
+  }
+  #address:focus { border-color: var(--accent); background: #000000; }
+
   /* Zone de rendu */
   #stage {
     flex: 1;
@@ -148,6 +185,13 @@
     <input type="text" id="new-tab-url" placeholder="https://example.com" autocomplete="off" />
     <button type="submit">Ouvrir</button>
   </form>
+  <div id="toolbar">
+    <button id="back-btn" title="Précédent">←</button>
+    <button id="forward-btn" title="Suivant">→</button>
+    <button id="reload-btn" title="Recharger">⟳</button>
+    <input type="text" id="address" placeholder="Adresse" autocomplete="off" />
+    <button id="devtools-btn" title="Ouvrir les DevTools complètes">&lt;/&gt; DevTools</button>
+  </div>
   <div id="stage">
     <div id="empty" style="display:none">Aucun onglet — cliquez sur + pour en ouvrir un.</div>
     <div id="loading" style="display:none">Connexion…</div>
@@ -164,6 +208,11 @@
     const emptyEl = document.getElementById("empty");
     const loadingEl = document.getElementById("loading");
     const ctx = canvas.getContext("2d");
+    const backBtn = document.getElementById("back-btn");
+    const forwardBtn = document.getElementById("forward-btn");
+    const reloadBtn = document.getElementById("reload-btn");
+    const addressInput = document.getElementById("address");
+    const devtoolsBtn = document.getElementById("devtools-btn");
 
     let tabs = [];
     let activeId = null;
@@ -181,6 +230,13 @@
       canvas.style.display = mode === "screen" ? "block" : "none";
       emptyEl.style.display = mode === "empty" ? "block" : "none";
       loadingEl.style.display = mode === "loading" ? "block" : "none";
+      for (const btn of [backBtn, forwardBtn, reloadBtn, devtoolsBtn]) btn.disabled = mode !== "screen";
+      addressInput.disabled = mode !== "screen";
+    }
+
+    function devtoolsUrlFor(id) {
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      return `${location.origin}/devtools/inspector.html?${scheme}=${location.host}/devtools/page/${id}`;
     }
 
     async function fetchTabs() {
@@ -207,6 +263,8 @@
       activeId = id;
       renderTabbar();
       setStage("loading");
+      const tab = tabs.find((t) => t.id === id);
+      if (tab) addressInput.value = tab.url;
       await fetch(`/api/tabs/${id}/activate`, { method: "POST" });
       connectScreencast(id);
     }
@@ -219,11 +277,29 @@
       socket.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "frame") frameImg.src = "data:image/jpeg;base64," + msg.data;
+        if (msg.type === "navigated" && document.activeElement !== addressInput) addressInput.value = msg.url;
       };
       socket.onclose = () => {
         if (activeId === id) setStage("empty");
       };
     }
+
+    function sendNav(msg) {
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+    }
+    backBtn.addEventListener("click", () => sendNav({ type: "back" }));
+    forwardBtn.addEventListener("click", () => sendNav({ type: "forward" }));
+    reloadBtn.addEventListener("click", () => sendNav({ type: "reload" }));
+    addressInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      let url = addressInput.value.trim();
+      if (!/^https?:\/\//.test(url)) url = "https://" + url;
+      sendNav({ type: "navigate", url });
+      canvas.focus();
+    });
+    devtoolsBtn.addEventListener("click", () => {
+      if (activeId) window.open(devtoolsUrlFor(activeId), "_blank");
+    });
 
     async function refreshTabs() {
       try {
