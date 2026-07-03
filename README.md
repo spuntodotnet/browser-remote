@@ -1,9 +1,10 @@
 # browser-remote
 
 Image Docker autonome donnant un contrôle interactif à distance d'un
-navigateur headless (Chromium + Chrome DevTools Protocol) : liste les onglets
-ouverts, clic pour rendre un onglet actif et ouvrir son contrôle à distance
-(voir/cliquer/taper en direct) dans un nouvel onglet.
+navigateur headless (Chromium + Chrome DevTools Protocol) : une vraie barre
+d'onglets, un écran embarqué (canvas + `Page.startScreencast`, clics/clavier
+forwardés en direct), précédent/suivant/reload/adresse, et un bouton pour
+ouvrir les DevTools complètes si besoin d'inspection avancée.
 
 Basée sur Chromium (licence BSD, `apt install chromium`) — pas de dépendance
 à browserless. Contexte technique complet et obstacles rencontrés pendant le
@@ -11,6 +12,15 @@ prototypage : voir `rfc/0001-remote-browser-control.md` dans le repo
 `coderhammer/work`.
 
 ## Usage
+
+Image publiée automatiquement sur `main` (voir
+`.github/workflows/docker-publish.yml`) :
+
+```bash
+docker run -p 3000:3000 ghcr.io/coderhammer/browser-remote:latest
+```
+
+Ou en local :
 
 ```bash
 docker build -t browser-remote .
@@ -32,6 +42,9 @@ Variables d'environnement :
 - `GET /api/tabs` — liste les onglets ouverts (`{id, title, url}[]`)
 - `POST /api/tabs` `{url}` — ouvre un nouvel onglet
 - `POST /api/tabs/:id/activate` — rend un onglet actif (`Target.activateTarget`)
+- `WS /api/tabs/:id/screencast` — flux de frames JPEG (`Page.startScreencast`)
+  + réception d'inputs souris/clavier et de commandes de navigation
+  (précédent/suivant/reload/adresse) pour cet onglet (`src/screencast.js`)
 - `/devtools/*`, `/json/*` — proxy passthrough vers le CDP interne de Chrome
   (nécessaire pour le contrôle à distance ; réécrit le header `Host`, sinon
   Chrome refuse toute requête dont le Host n'est pas `localhost`/une IP)
