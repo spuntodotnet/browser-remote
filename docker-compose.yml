@@ -1,0 +1,11 @@
+services:
+  browser-remote:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    # Pour tester du HTTPS avec une CA locale (mkcert), décommenter et
+    # ajuster le chemin vers ta CA (voir README.md) :
+    # volumes:
+    #   - /path/to/rootCA.pem:/certs/extra-ca.pem:ro
