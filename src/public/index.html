@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>browser-remote</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 1.25rem; }
+  ul { list-style: none; padding: 0; }
+  li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+  li:hover { background: #f5f5f5; }
+  .title { font-weight: 600; }
+  .url { color: #666; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  form { display: flex; gap: 8px; margin: 20px 0; }
+  input[type="text"] { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+  button { padding: 8px 16px; border: none; border-radius: 4px; background: #1a1a1a; color: white; cursor: pointer; }
+  .empty { color: #666; }
+</style>
+</head>
+<body>
+  <h1>Onglets ouverts</h1>
+  <form id="new-tab-form">
+    <input type="text" id="new-tab-url" placeholder="https://example.com" required />
+    <button type="submit">Ouvrir un onglet</button>
+  </form>
+  <ul id="tabs"></ul>
+
+  <script>
+    async function fetchTabs() {
+      const res = await fetch("/api/tabs");
+      const { tabs } = await res.json();
+      return tabs;
+    }
+
+    function remoteControlUrl(id) {
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      return `${location.origin}/devtools/inspector.html?${scheme}=${location.host}/devtools/page/${id}`;
+    }
+
+    async function activateAndOpen(id) {
+      await fetch(`/api/tabs/${id}/activate`, { method: "POST" });
+      window.open(remoteControlUrl(id), "_blank");
+    }
+
+    function render(tabs) {
+      const ul = document.getElementById("tabs");
+      ul.innerHTML = "";
+      if (tabs.length === 0) {
+        ul.innerHTML = '<li class="empty">Aucun onglet ouvert.</li>';
+        return;
+      }
+      for (const tab of tabs) {
+        const li = document.createElement("li");
+        li.innerHTML = `<div><div class="title"></div><div class="url"></div></div>`;
+        li.querySelector(".title").textContent = tab.title;
+        li.querySelector(".url").textContent = tab.url;
+        li.addEventListener("click", () => activateAndOpen(tab.id));
+        ul.appendChild(li);
+      }
+    }
+
+    async function refresh() {
+      try {
+        render(await fetchTabs());
+      } catch (err) {
+        console.error("refresh failed", err);
+      }
+    }
+
+    document.getElementById("new-tab-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("new-tab-url");
+      let url = input.value.trim();
+      if (!/^https?:\/\//.test(url)) url = "https://" + url;
+      await fetch("/api/tabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      input.value = "";
+      refresh();
+    });
+
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
