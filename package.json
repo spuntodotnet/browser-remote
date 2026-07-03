@@ -1,0 +1,16 @@
+{
+  "name": "browser-remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contrôle interactif à distance d'un navigateur headless (CDP/DevTools)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1",
+    "puppeteer-core": "^24.0.0",
+    "ws": "^8.21.0"
+  }
+}

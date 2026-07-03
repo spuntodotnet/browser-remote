@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>browser-remote</title>
+<style>
+  :root {
+    --bar-bg: #1c1c1e;
+    --bar-fg: #e4e4e7;
+    --bar-fg-dim: #8b8b90;
+    --tab-active: #2c2c2e;
+    --tab-hover: #262628;
+    --accent: #3b82f6;
+    --stage-bg: #0a0a0b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    background: var(--stage-bg);
+    overflow: hidden;
+  }
+
+  /* Barre d'onglets */
+  #tabbar {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 8px 8px 0;
+    background: var(--bar-bg);
+    flex: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #tabbar::-webkit-scrollbar { display: none; }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 96px;
+    max-width: 220px;
+    padding: 9px 12px;
+    border-radius: 9px 9px 0 0;
+    color: var(--bar-fg-dim);
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s ease, color 0.12s ease;
+    white-space: nowrap;
+  }
+  .tab:hover { background: var(--tab-hover); color: var(--bar-fg); }
+  .tab.active { background: var(--tab-active); color: var(--bar-fg); }
+
+  .tab .dot {
+    flex: none;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .tab.active .dot { opacity: 1; }
+
+  .tab .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .tab-new {
+    flex: none;
+    width: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bar-fg-dim);
+    border-radius: 9px 9px 0 0;
+    cursor: pointer;
+    font-size: 18px;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .tab-new:hover { background: var(--tab-hover); color: var(--bar-fg); }
+
+  /* Formulaire nouvel onglet (popover) */
+  #new-tab-form {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bar-bg);
+    border-top: 1px solid #000;
+  }
+  #new-tab-form.open { display: flex; }
+  #new-tab-form input {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid #3a3a3c;
+    background: #0000002e;
+    color: var(--bar-fg);
+    font-size: 13px;
+    outline: none;
+  }
+  #new-tab-form input:focus { border-color: var(--accent); }
+  #new-tab-form button {
+    padding: 7px 14px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Barre d'outils : précédent/suivant/reload + adresse + devtools */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--tab-active);
+    border-top: 1px solid #000;
+    flex: none;
+  }
+  #toolbar button {
+    flex: none;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--bar-fg);
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  #toolbar button:hover:not(:disabled) { background: var(--tab-hover); }
+  #toolbar button:disabled { color: var(--bar-fg-dim); opacity: 0.4; cursor: default; }
+  #toolbar #devtools-btn { width: auto; padding: 0 10px; font-size: 12px; font-weight: 600; gap: 6px; }
+  #address {
+    flex: 1;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: #0000002e;
+    color: var(--bar-fg);
+    font-size: 13px;
+    outline: none;
+  }
+  #address:focus { border-color: var(--accent); background: #000000; }
+
+  /* Zone de rendu */
+  #stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 0;
+  }
+  #screen {
+    max-width: 100%;
+    max-height: 100%;
+    box-shadow: 0 0 0 1px #000, 0 20px 60px -20px #000c;
+    outline: none;
+    cursor: default;
+  }
+  #empty, #loading {
+    color: var(--bar-fg-dim);
+    font-size: 14px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div id="tabbar">
+    <div class="tab-new" id="new-tab-btn" title="Nouvel onglet">+</div>
+  </div>
+  <form id="new-tab-form">
+    <input type="text" id="new-tab-url" placeholder="https://example.com" autocomplete="off" />
+    <button type="submit">Ouvrir</button>
+  </form>
+  <div id="toolbar">
+    <button id="back-btn" title="Précédent">←</button>
+    <button id="forward-btn" title="Suivant">→</button>
+    <button id="reload-btn" title="Recharger">⟳</button>
+    <input type="text" id="address" placeholder="Adresse" autocomplete="off" />
+    <button id="devtools-btn" title="Ouvrir les DevTools complètes">&lt;/&gt; DevTools</button>
+  </div>
+  <div id="stage">
+    <div id="empty" style="display:none">Aucun onglet — cliquez sur + pour en ouvrir un.</div>
+    <div id="loading" style="display:none">Connexion…</div>
+    <canvas id="screen" tabindex="0"></canvas>
+  </div>
+
+  <script>
+    const tabbar = document.getElementById("tabbar");
+    const newTabBtn = document.getElementById("new-tab-btn");
+    const newTabForm = document.getElementById("new-tab-form");
+    const newTabUrl = document.getElementById("new-tab-url");
+    const stage = document.getElementById("stage");
+    const canvas = document.getElementById("screen");
+    const emptyEl = document.getElementById("empty");
+    const loadingEl = document.getElementById("loading");
+    const ctx = canvas.getContext("2d");
+    const backBtn = document.getElementById("back-btn");
+    const forwardBtn = document.getElementById("forward-btn");
+    const reloadBtn = document.getElementById("reload-btn");
+    const addressInput = document.getElementById("address");
+    const devtoolsBtn = document.getElementById("devtools-btn");
+
+    let tabs = [];
+    let activeId = null;
+    let socket = null;
+    const frameImg = new Image();
+    frameImg.onload = () => {
+      if (canvas.width !== frameImg.naturalWidth || canvas.height !== frameImg.naturalHeight) {
+        canvas.width = frameImg.naturalWidth;
+        canvas.height = frameImg.naturalHeight;
+      }
+      ctx.drawImage(frameImg, 0, 0);
+    };
+
+    function setStage(mode) {
+      canvas.style.display = mode === "screen" ? "block" : "none";
+      emptyEl.style.display = mode === "empty" ? "block" : "none";
+      loadingEl.style.display = mode === "loading" ? "block" : "none";
+      for (const btn of [backBtn, forwardBtn, reloadBtn, devtoolsBtn]) btn.disabled = mode !== "screen";
+      addressInput.disabled = mode !== "screen";
+    }
+
+    function devtoolsUrlFor(id) {
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      return `${location.origin}/devtools/inspector.html?${scheme}=${location.host}/devtools/page/${id}`;
+    }
+
+    async function fetchTabs() {
+      const res = await fetch("/api/tabs");
+      const { tabs: list } = await res.json();
+      return list;
+    }
+
+    function renderTabbar() {
+      tabbar.querySelectorAll(".tab").forEach((el) => el.remove());
+      for (const tab of tabs) {
+        const el = document.createElement("div");
+        el.className = "tab" + (tab.id === activeId ? " active" : "");
+        el.innerHTML = `<span class="dot"></span><span class="label"></span>`;
+        el.querySelector(".label").textContent = tab.title || tab.url;
+        el.title = tab.url;
+        el.addEventListener("click", () => selectTab(tab.id));
+        tabbar.insertBefore(el, newTabBtn);
+      }
+    }
+
+    async function selectTab(id) {
+      if (id === activeId && socket) return;
+      activeId = id;
+      renderTabbar();
+      setStage("loading");
+      const tab = tabs.find((t) => t.id === id);
+      if (tab) addressInput.value = tab.url;
+      await fetch(`/api/tabs/${id}/activate`, { method: "POST" });
+      connectScreencast(id);
+    }
+
+    function connectScreencast(id) {
+      if (socket) socket.close();
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${scheme}://${location.host}/api/tabs/${id}/screencast`);
+      socket.onopen = () => setStage("screen");
+      socket.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "frame") frameImg.src = "data:image/jpeg;base64," + msg.data;
+        if (msg.type === "navigated" && document.activeElement !== addressInput) addressInput.value = msg.url;
+      };
+      socket.onclose = () => {
+        if (activeId === id) setStage("empty");
+      };
+    }
+
+    function sendNav(msg) {
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+    }
+    backBtn.addEventListener("click", () => sendNav({ type: "back" }));
+    forwardBtn.addEventListener("click", () => sendNav({ type: "forward" }));
+    reloadBtn.addEventListener("click", () => sendNav({ type: "reload" }));
+    addressInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      let url = addressInput.value.trim();
+      if (!/^https?:\/\//.test(url)) url = "https://" + url;
+      sendNav({ type: "navigate", url });
+      canvas.focus();
+    });
+    devtoolsBtn.addEventListener("click", () => {
+      if (activeId) window.open(devtoolsUrlFor(activeId), "_blank");
+    });
+
+    async function refreshTabs() {
+      try {
+        tabs = await fetchTabs();
+      } catch (err) {
+        console.error("refresh failed", err);
+        return;
+      }
+      if (tabs.length === 0) {
+        activeId = null;
+        if (socket) socket.close();
+        setStage("empty");
+      } else if (!activeId || !tabs.some((t) => t.id === activeId)) {
+        selectTab(tabs[0].id);
+      }
+      renderTabbar();
+    }
+
+    newTabBtn.addEventListener("click", () => {
+      newTabForm.classList.toggle("open");
+      if (newTabForm.classList.contains("open")) newTabUrl.focus();
+    });
+
+    newTabForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      let url = newTabUrl.value.trim();
+      if (!url) return;
+      if (!/^https?:\/\//.test(url)) url = "https://" + url;
+      const res = await fetch("/api/tabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const { id } = await res.json();
+      newTabUrl.value = "";
+      newTabForm.classList.remove("open");
+      await refreshTabs();
+      selectTab(id);
+    });
+
+    // --- Forward souris ---
+    function sendInput(msg) {
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+    }
+
+    function modifiersOf(e) {
+      return { alt: e.altKey, ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey };
+    }
+
+    function remoteCoords(e) {
+      const scaleX = canvas.width / canvas.clientWidth;
+      const scaleY = canvas.height / canvas.clientHeight;
+      return { x: e.offsetX * scaleX, y: e.offsetY * scaleY };
+    }
+
+    const BUTTON_NAMES = ["left", "middle", "right"];
+
+    canvas.addEventListener("mousedown", (e) => {
+      canvas.focus();
+      const { x, y } = remoteCoords(e);
+      sendInput({ type: "mouseDown", x, y, button: BUTTON_NAMES[e.button] || "left", buttons: e.buttons, modifiers: modifiersOf(e) });
+    });
+    canvas.addEventListener("mouseup", (e) => {
+      const { x, y } = remoteCoords(e);
+      sendInput({ type: "mouseUp", x, y, button: BUTTON_NAMES[e.button] || "left", buttons: e.buttons, modifiers: modifiersOf(e) });
+    });
+    let lastMove = 0;
+    canvas.addEventListener("mousemove", (e) => {
+      const now = performance.now();
+      if (now - lastMove < 30) return;
+      lastMove = now;
+      const { x, y } = remoteCoords(e);
+      sendInput({ type: "mouseMove", x, y, buttons: e.buttons, modifiers: modifiersOf(e) });
+    });
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const { x, y } = remoteCoords(e);
+      sendInput({ type: "wheel", x, y, deltaX: e.deltaX, deltaY: e.deltaY, modifiers: modifiersOf(e) });
+    }, { passive: false });
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    // --- Forward clavier ---
+    const SPECIAL_TEXT = { Enter: "\r", Tab: "\t" };
+    function keyMsg(type, e) {
+      const text = e.key.length === 1 ? e.key : SPECIAL_TEXT[e.key];
+      return {
+        type,
+        key: e.key,
+        code: e.code,
+        keyCode: e.keyCode,
+        text: type === "keyDown" ? text : undefined,
+        modifiers: modifiersOf(e),
+      };
+    }
+    canvas.addEventListener("keydown", (e) => {
+      e.preventDefault();
+      sendInput(keyMsg("keyDown", e));
+    });
+    canvas.addEventListener("keyup", (e) => {
+      e.preventDefault();
+      sendInput(keyMsg("keyUp", e));
+    });
+
+    setStage("empty");
+    refreshTabs();
+    setInterval(refreshTabs, 3000);
+  </script>
+</body>
+</html>
