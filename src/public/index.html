@@ -65,11 +65,30 @@
   .tab.active .dot { opacity: 1; }
 
   .tab .label {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 13px;
     font-weight: 500;
   }
+
+  .tab .close {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: inherit;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s ease, background 0.12s ease;
+  }
+  .tab .close svg { width: 12px; height: 12px; }
+  .tab:hover .close, .tab.active .close { opacity: 0.8; visibility: visible; }
+  .tab .close:hover { opacity: 1; background: #ffffff26; }
 
   .tab-new {
     flex: none;
@@ -80,42 +99,18 @@
     color: var(--bar-fg-dim);
     border-radius: 9px 9px 0 0;
     cursor: pointer;
-    font-size: 18px;
     transition: background 0.12s ease, color 0.12s ease;
   }
   .tab-new:hover { background: var(--tab-hover); color: var(--bar-fg); }
+  .tab-new svg { width: 16px; height: 16px; }
 
-  /* Formulaire nouvel onglet (popover) */
-  #new-tab-form {
-    display: none;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: var(--bar-bg);
-    border-top: 1px solid #000;
+  .tab .favicon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    opacity: 0.85;
   }
-  #new-tab-form.open { display: flex; }
-  #new-tab-form input {
-    flex: 1;
-    padding: 7px 10px;
-    border-radius: 6px;
-    border: 1px solid #3a3a3c;
-    background: #0000002e;
-    color: var(--bar-fg);
-    font-size: 13px;
-    outline: none;
-  }
-  #new-tab-form input:focus { border-color: var(--accent); }
-  #new-tab-form button {
-    padding: 7px 14px;
-    border: none;
-    border-radius: 6px;
-    background: var(--accent);
-    color: white;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
+  .tab .favicon svg { width: 100%; height: 100%; }
 
   /* Barre d'outils : précédent/suivant/reload + adresse + devtools */
   #toolbar {
@@ -135,13 +130,15 @@
     border-radius: 7px;
     background: transparent;
     color: var(--bar-fg);
-    font-size: 15px;
     cursor: pointer;
     transition: background 0.12s ease;
   }
+  #toolbar button svg { width: 18px; height: 18px; }
   #toolbar button:hover:not(:disabled) { background: var(--tab-hover); }
   #toolbar button:disabled { color: var(--bar-fg-dim); opacity: 0.4; cursor: default; }
   #toolbar #devtools-btn { width: auto; padding: 0 10px; font-size: 12px; font-weight: 600; gap: 6px; }
+  #toolbar #devtools-btn svg { width: 15px; height: 15px; }
+  #toolbar #devtools-btn.active { background: var(--accent); color: #fff; }
   #address {
     flex: 1;
     padding: 6px 12px;
@@ -154,7 +151,13 @@
   }
   #address:focus { border-color: var(--accent); background: #000000; }
 
-  /* Zone de rendu */
+  /* Zone de rendu + panneau DevTools, empilés verticalement */
+  #workspace {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   #stage {
     flex: 1;
     display: flex;
@@ -175,34 +178,73 @@
     font-size: 14px;
     text-align: center;
   }
+
+  /* Panneau DevTools ancré (iframe sur le vrai devtools-frontend de Chrome,
+     servi same-origin via le proxy CDP donc pas de souci de CSP/framing) */
+  #devtools-handle {
+    flex: none;
+    height: 8px;
+    cursor: row-resize;
+    background: #000;
+    display: none;
+  }
+  #devtools-handle:hover, #devtools-handle.dragging { background: var(--accent); }
+  #devtools-panel {
+    flex: none;
+    height: 320px;
+    display: none;
+    background: #fff;
+    border-top: 1px solid #000;
+  }
+  #devtools-panel iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+  #workspace.devtools-open #devtools-handle,
+  #workspace.devtools-open #devtools-panel {
+    display: block;
+  }
 </style>
 </head>
 <body>
   <div id="tabbar">
-    <div class="tab-new" id="new-tab-btn" title="Nouvel onglet">+</div>
+    <div class="tab-new" id="new-tab-btn" title="Nouvel onglet">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+    </div>
   </div>
-  <form id="new-tab-form">
-    <input type="text" id="new-tab-url" placeholder="https://example.com" autocomplete="off" />
-    <button type="submit">Ouvrir</button>
-  </form>
   <div id="toolbar">
-    <button id="back-btn" title="Précédent">←</button>
-    <button id="forward-btn" title="Suivant">→</button>
-    <button id="reload-btn" title="Recharger">⟳</button>
-    <input type="text" id="address" placeholder="Adresse" autocomplete="off" />
-    <button id="devtools-btn" title="Ouvrir les DevTools complètes">&lt;/&gt; DevTools</button>
+    <button id="back-btn" title="Précédent">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    </button>
+    <button id="forward-btn" title="Suivant">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+    </button>
+    <button id="reload-btn" title="Recharger">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08a5.99 5.99 0 01-5.65 4c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+    <input type="text" id="address" placeholder="Rechercher ou saisir une adresse" autocomplete="off" />
+    <button id="devtools-btn" title="Afficher/masquer les DevTools">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+      <span>DevTools</span>
+    </button>
   </div>
-  <div id="stage">
-    <div id="empty" style="display:none">Aucun onglet — cliquez sur + pour en ouvrir un.</div>
-    <div id="loading" style="display:none">Connexion…</div>
-    <canvas id="screen" tabindex="0"></canvas>
+  <div id="workspace">
+    <div id="stage">
+      <div id="empty" style="display:none">Aucun onglet — cliquez sur + pour en ouvrir un.</div>
+      <div id="loading" style="display:none">Connexion…</div>
+      <canvas id="screen" tabindex="0"></canvas>
+    </div>
+    <div id="devtools-handle"></div>
+    <div id="devtools-panel">
+      <iframe id="devtools-frame" title="DevTools"></iframe>
+    </div>
   </div>
 
   <script>
     const tabbar = document.getElementById("tabbar");
     const newTabBtn = document.getElementById("new-tab-btn");
-    const newTabForm = document.getElementById("new-tab-form");
-    const newTabUrl = document.getElementById("new-tab-url");
     const stage = document.getElementById("stage");
     const canvas = document.getElementById("screen");
     const emptyEl = document.getElementById("empty");
@@ -213,6 +255,10 @@
     const reloadBtn = document.getElementById("reload-btn");
     const addressInput = document.getElementById("address");
     const devtoolsBtn = document.getElementById("devtools-btn");
+    const workspace = document.getElementById("workspace");
+    const devtoolsHandle = document.getElementById("devtools-handle");
+    const devtoolsPanel = document.getElementById("devtools-panel");
+    const devtoolsFrame = document.getElementById("devtools-frame");
 
     let tabs = [];
     let activeId = null;
@@ -245,15 +291,32 @@
       return list;
     }
 
+    const NEW_TAB_URL = "about:blank";
+    const GLOBE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>';
+
+    function tabLabel(tab) {
+      return tab.url === NEW_TAB_URL ? "Nouvel onglet" : tab.title || tab.url;
+    }
+
+    function addressValueFor(url) {
+      return url === NEW_TAB_URL ? "" : url;
+    }
+
+    const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.3 5.71L12 12.01l-6.3-6.3-1.41 1.41 6.3 6.3-6.3 6.3 1.41 1.41 6.3-6.3 6.3 6.3 1.41-1.41-6.3-6.3 6.3-6.3z"/></svg>';
+
     function renderTabbar() {
       tabbar.querySelectorAll(".tab").forEach((el) => el.remove());
       for (const tab of tabs) {
         const el = document.createElement("div");
         el.className = "tab" + (tab.id === activeId ? " active" : "");
-        el.innerHTML = `<span class="dot"></span><span class="label"></span>`;
-        el.querySelector(".label").textContent = tab.title || tab.url;
+        el.innerHTML = `<span class="favicon">${GLOBE_ICON}</span><span class="dot"></span><span class="label"></span><span class="close" title="Fermer l'onglet">${CLOSE_ICON}</span>`;
+        el.querySelector(".label").textContent = tabLabel(tab);
         el.title = tab.url;
         el.addEventListener("click", () => selectTab(tab.id));
+        el.querySelector(".close").addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeTab(tab.id);
+        });
         tabbar.insertBefore(el, newTabBtn);
       }
     }
@@ -264,20 +327,35 @@
       renderTabbar();
       setStage("loading");
       const tab = tabs.find((t) => t.id === id);
-      if (tab) addressInput.value = tab.url;
+      if (tab) addressInput.value = addressValueFor(tab.url);
       await fetch(`/api/tabs/${id}/activate`, { method: "POST" });
-      connectScreencast(id);
+      connectScreencast(id, tab && tab.url === NEW_TAB_URL);
+      updateDevtoolsFrame();
     }
 
-    function connectScreencast(id) {
+    async function closeTab(id) {
+      await fetch(`/api/tabs/${id}`, { method: "DELETE" });
+      await refreshTabs();
+    }
+
+    function connectScreencast(id, focusAddress) {
       if (socket) socket.close();
       const scheme = location.protocol === "https:" ? "wss" : "ws";
       socket = new WebSocket(`${scheme}://${location.host}/api/tabs/${id}/screencast`);
-      socket.onopen = () => setStage("screen");
+      socket.onopen = () => {
+        setStage("screen");
+        lastSentSize = null;
+        const rect = stage.getBoundingClientRect();
+        sendResize(Math.round(rect.width), Math.round(rect.height));
+        if (focusAddress) {
+          addressInput.focus();
+          addressInput.select();
+        }
+      };
       socket.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "frame") frameImg.src = "data:image/jpeg;base64," + msg.data;
-        if (msg.type === "navigated" && document.activeElement !== addressInput) addressInput.value = msg.url;
+        if (msg.type === "navigated" && document.activeElement !== addressInput) addressInput.value = addressValueFor(msg.url);
       };
       socket.onclose = () => {
         if (activeId === id) setStage("empty");
@@ -297,9 +375,75 @@
       sendNav({ type: "navigate", url });
       canvas.focus();
     });
-    devtoolsBtn.addEventListener("click", () => {
-      if (activeId) window.open(devtoolsUrlFor(activeId), "_blank");
+    let devtoolsOpen = false;
+    let devtoolsHeight = 320;
+
+    function setDevtoolsOpen(open) {
+      devtoolsOpen = open;
+      workspace.classList.toggle("devtools-open", open);
+      devtoolsBtn.classList.toggle("active", open);
+      devtoolsPanel.style.height = devtoolsHeight + "px";
+      if (open) updateDevtoolsFrame();
+      else devtoolsFrame.src = "about:blank";
+    }
+
+    function updateDevtoolsFrame() {
+      if (!devtoolsOpen || !activeId) return;
+      const url = devtoolsUrlFor(activeId);
+      if (devtoolsFrame.src !== url) devtoolsFrame.src = url;
+    }
+
+    devtoolsBtn.addEventListener("click", () => setDevtoolsOpen(!devtoolsOpen));
+
+    let draggingDevtools = false;
+    devtoolsHandle.addEventListener("mousedown", (e) => {
+      draggingDevtools = true;
+      devtoolsHandle.classList.add("dragging");
+      // Le drag suit la souris via mousemove sur window, mais l'iframe DevTools
+      // a son propre document : dès que le curseur la survole, ses mousemove ne
+      // remontent plus jamais à la page parente et le drag se fige. On neutralise
+      // l'iframe (et le forwarding souris vers le remote) le temps du drag.
+      devtoolsFrame.style.pointerEvents = "none";
+      canvas.style.pointerEvents = "none";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
     });
+    window.addEventListener("mousemove", (e) => {
+      if (!draggingDevtools) return;
+      const rect = workspace.getBoundingClientRect();
+      devtoolsHeight = Math.min(Math.max(rect.bottom - e.clientY, 120), rect.height - 120);
+      devtoolsPanel.style.height = devtoolsHeight + "px";
+    });
+    window.addEventListener("mouseup", () => {
+      if (!draggingDevtools) return;
+      draggingDevtools = false;
+      devtoolsHandle.classList.remove("dragging");
+      devtoolsFrame.style.pointerEvents = "";
+      canvas.style.pointerEvents = "";
+      document.body.style.userSelect = "";
+    });
+
+    // --- Resize du viewport distant collé à la taille de #stage ---
+    let lastSentSize = null;
+    let resizeTimer = null;
+
+    function scheduleResize(width, height) {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => sendResize(width, height), 150);
+    }
+
+    function sendResize(width, height) {
+      if (!socket || socket.readyState !== WebSocket.OPEN || width <= 0 || height <= 0) return;
+      if (lastSentSize && lastSentSize.width === width && lastSentSize.height === height) return;
+      lastSentSize = { width, height };
+      socket.send(JSON.stringify({ type: "resize", width, height }));
+    }
+
+    new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        scheduleResize(Math.round(entry.contentRect.width), Math.round(entry.contentRect.height));
+      }
+    }).observe(stage);
 
     async function refreshTabs() {
       try {
@@ -318,26 +462,15 @@
       renderTabbar();
     }
 
-    newTabBtn.addEventListener("click", () => {
-      newTabForm.classList.toggle("open");
-      if (newTabForm.classList.contains("open")) newTabUrl.focus();
-    });
-
-    newTabForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      let url = newTabUrl.value.trim();
-      if (!url) return;
-      if (!/^https?:\/\//.test(url)) url = "https://" + url;
+    newTabBtn.addEventListener("click", async () => {
       const res = await fetch("/api/tabs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: NEW_TAB_URL }),
       });
       const { id } = await res.json();
-      newTabUrl.value = "";
-      newTabForm.classList.remove("open");
       await refreshTabs();
-      selectTab(id);
+      await selectTab(id);
     });
 
     // --- Forward souris ---

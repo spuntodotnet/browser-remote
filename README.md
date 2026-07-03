@@ -62,6 +62,7 @@ toujours suffisante.
 - `GET /api/tabs` — liste les onglets ouverts (`{id, title, url}[]`)
 - `POST /api/tabs` `{url}` — ouvre un nouvel onglet
 - `POST /api/tabs/:id/activate` — rend un onglet actif (`Target.activateTarget`)
+- `DELETE /api/tabs/:id` — ferme un onglet (`Target.closeTarget`)
 - `WS /api/tabs/:id/screencast` — flux de frames JPEG (`Page.startScreencast`)
   + réception d'inputs souris/clavier et de commandes de navigation
   (précédent/suivant/reload/adresse) pour cet onglet (`src/screencast.js`)

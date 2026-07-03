@@ -77,6 +77,19 @@ export function attachScreencast(clientWs, targetId) {
       send("Page.reload", { ignoreCache: false });
     } else if (msg.type === "navigate" && msg.url) {
       send("Page.navigate", { url: msg.url });
+    } else if (msg.type === "resize" && msg.width > 0 && msg.height > 0) {
+      // Emulation.setDeviceMetricsOverride plutôt que Browser.setWindowBounds :
+      // ce dernier redimensionne la fenêtre OS-level, qui réserve en interne
+      // ~87px de hauteur (chrome de fenêtre fantôme) même en headless — écart
+      // vérifié empiriquement. setDeviceMetricsOverride pilote directement la
+      // taille de rendu de la page, donc les frames du screencast matchent
+      // exactement width/height demandés, sans ce décalage.
+      send("Emulation.setDeviceMetricsOverride", {
+        width: Math.round(msg.width),
+        height: Math.round(msg.height),
+        deviceScaleFactor: 0,
+        mobile: false,
+      });
     } else {
       dispatchInput(send, msg);
     }

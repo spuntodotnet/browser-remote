@@ -30,3 +30,8 @@ export async function openTab(url) {
   const { targetId } = await session.send("Target.createTarget", { url });
   return targetId;
 }
+
+export async function closeTab(id) {
+  const session = await getSession();
+  await session.send("Target.closeTarget", { targetId: id });
+}

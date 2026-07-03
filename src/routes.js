@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { CDP_BASE_URL } from "./chrome.js";
-import { activateTab, openTab } from "./cdpClient.js";
+import { activateTab, openTab, closeTab } from "./cdpClient.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INDEX_HTML = await readFile(join(__dirname, "public", "index.html"), "utf8");
@@ -52,6 +52,12 @@ export async function handleAppRoute(req, res, pathname) {
   const activateMatch = pathname.match(/^\/api\/tabs\/([^/]+)\/activate$/);
   if (req.method === "POST" && activateMatch) {
     await activateTab(activateMatch[1]);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  const tabMatch = pathname.match(/^\/api\/tabs\/([^/]+)$/);
+  if (req.method === "DELETE" && tabMatch) {
+    await closeTab(tabMatch[1]);
     return sendJson(res, 200, { ok: true });
   }
 
