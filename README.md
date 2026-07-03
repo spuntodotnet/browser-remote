@@ -36,6 +36,26 @@ Variables d'environnement :
 | `PORT` | `3000` | Port d'écoute du serveur |
 | `CHROME_BIN` | `chromium` (`/usr/bin/chromium` dans l'image) | Binaire Chrome/Chromium |
 | `CHROME_USER_DATA_DIR` | `/tmp/chrome-profile` | Profil Chrome |
+| `EXTRA_CA_CERT_PATH` | `/certs/extra-ca.pem` | Voir "CA locale additionnelle" ci-dessous |
+
+## CA locale additionnelle (HTTPS avec un certificat non public)
+
+Pour tester une app en HTTPS avec un certificat de CA locale (ex: `mkcert`)
+plutôt qu'un certificat public, monter le fichier de la CA (pas le
+certificat du site — la CA qui l'a signé) dans le conteneur et Chromium lui
+fera confiance au démarrage :
+
+```bash
+docker run -p 3000:3000 \
+  -v /path/to/rootCA.pem:/certs/extra-ca.pem:ro \
+  ghcr.io/coderhammer/browser-remote:latest
+```
+
+No-op si le fichier n'est pas présent — comportement par défaut inchangé.
+Importée à la fois dans le store système (`update-ca-certificates`) et dans
+la base NSS de Chromium (`~/.pki/nssdb` via `certutil`) : Chromium sur Linux
+consulte les deux, une CA ajoutée seulement au store système n'est pas
+toujours suffisante.
 
 ## API
 
