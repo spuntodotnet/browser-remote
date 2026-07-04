@@ -4,6 +4,7 @@ import { spawnChrome, waitForChrome } from "./chrome.js";
 import { cdpProxy, isProxiedPath } from "./proxy.js";
 import { handleAppRoute } from "./routes.js";
 import { attachScreencast } from "./screencast.js";
+import { ensureDefaultTab } from "./cdpClient.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
@@ -12,6 +13,7 @@ const SCREENCAST_RE = /^\/api\/tabs\/([^/]+)\/screencast$/;
 spawnChrome();
 await waitForChrome();
 console.log("Chrome CDP prêt.");
+await ensureDefaultTab();
 
 const screencastWss = new WebSocketServer({ noServer: true });
 

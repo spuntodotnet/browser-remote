@@ -33,7 +33,7 @@ async function listTabs() {
 
 export async function handleAppRoute(req, res, pathname) {
   if (req.method === "GET" && pathname === "/") {
-    res.writeHead(200, { "Content-Type": "text/html" });
+    res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
     return res.end(INDEX_HTML);
   }
 

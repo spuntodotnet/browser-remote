@@ -22,6 +22,7 @@
     font-family: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
     background: var(--stage-bg);
     overflow: hidden;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   /* Barre d'onglets */
@@ -206,6 +207,26 @@
   #workspace.devtools-open #devtools-handle,
   #workspace.devtools-open #devtools-panel {
     display: block;
+  }
+
+  /* Mobile : pas de DevTools (inutile en tactile), top bar pensée pour le doigt.
+     pointer:coarse+hover:none cible le tactile même en paysage (un iPhone en
+     paysage dépasse largement 700px de large), la largeur reste en filet de
+     sécurité pour les cas non couverts par pointer/hover (ex: certains WebView). */
+  @media (max-width: 700px), ((pointer: coarse) and (hover: none)) {
+    /* spécificité "#toolbar #devtools-btn" pour battre la règle "#toolbar button" */
+    #toolbar #devtools-btn { display: none; }
+
+    #tabbar { padding: 6px 6px 0; }
+    .tab { min-width: 84px; padding: 10px 10px; }
+
+    #toolbar { padding: 8px; gap: 8px; }
+    #toolbar button { width: 42px; height: 42px; border-radius: 9px; }
+    #toolbar button svg { width: 20px; height: 20px; }
+    #address {
+      padding: 10px 12px;
+      font-size: 16px; /* évite le zoom auto de Safari iOS au focus */
+    }
   }
 </style>
 </head>

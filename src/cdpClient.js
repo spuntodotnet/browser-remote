@@ -35,3 +35,14 @@ export async function closeTab(id) {
   const session = await getSession();
   await session.send("Target.closeTarget", { targetId: id });
 }
+
+// Garantit qu'au démarrage du serveur, un onglet about:blank est déjà ouvert
+// (l'utilisateur n'a qu'à taper une adresse, pas besoin de cliquer sur +).
+export async function ensureDefaultTab() {
+  const res = await fetch(`${CDP_BASE_URL}/json/list`);
+  const targets = await res.json();
+  const pages = targets.filter(
+    (t) => t.type === "page" && !t.url.startsWith("chrome://") && !t.url.startsWith("chrome-untrusted://")
+  );
+  if (pages.length === 0) await openTab("about:blank");
+}
