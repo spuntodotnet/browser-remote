@@ -80,6 +80,47 @@ d'un Chrome desktop normal. Désactivé par défaut — comportement inchangé.
   (nécessaire pour le contrôle à distance ; réécrit le header `Host`, sinon
   Chrome refuse toute requête dont le Host n'est pas `localhost`/une IP)
 
+## Pilotage par script (Puppeteer)
+
+Le proxy `/json/*`/`/devtools/*` ci-dessus permet aussi de piloter la même
+instance Chrome depuis un script Puppeteer, en plus de (ou à la place de)
+l'interface web — les deux voient et peuvent créer les mêmes onglets, en
+temps réel, puisque c'est littéralement le même navigateur.
+
+**Piège** : ne pas utiliser `puppeteer.connect({ browserURL })` tel quel.
+Chrome annonce dans `/json/version` son propre WebSocket **interne**
+(`ws://127.0.0.1:9222/...`), pas joignable depuis l'extérieur du conteneur.
+Il faut récupérer ce endpoint via une requête HTTP normale (donc proxiée,
+avec le bon `Host`), puis reconstruire l'URL du WebSocket avec le host
+externe :
+
+```js
+import puppeteer from "puppeteer-core";
+
+const CHROME_URL = "http://localhost:3000"; // ou l'URL publique du conteneur
+
+const { webSocketDebuggerUrl } = await (await fetch(`${CHROME_URL}/json/version`)).json();
+const browserWSEndpoint = `${CHROME_URL.replace(/^http/, "ws")}${new URL(webSocketDebuggerUrl).pathname}`;
+
+const browser = await puppeteer.connect({ browserWSEndpoint });
+const page = await browser.newPage();
+await page.goto("https://example.com");
+await page.screenshot({ path: "out.png" });
+
+await browser.disconnect(); // laisse Chrome (et le conteneur) tourner
+```
+
+`page.click()`/`page.type()`/etc. suffisent pour interagir directement avec
+la page ainsi ouverte — le screencast de l'UI web n'est utile que pour un
+pilotage *humain*, pas pour un script.
+
+**Piège `close()` vs `disconnect()`** : `browser.close()` envoie `Browser.close`
+et **tue le process Chrome du conteneur** (donc tous les onglets, y compris
+ceux ouverts depuis l'UI web) — c'est le comportement normal de Puppeteer
+pour un navigateur qu'il a lui-même lancé, mais surprenant ici puisqu'on se
+connecte à un navigateur qu'on ne possède pas. Toujours utiliser
+`browser.disconnect()` pour se détacher sans arrêter Chrome.
+
 ## Sécurité — important
 
 **Aucune authentification en v1.** Quiconque atteint le port exposé a un
