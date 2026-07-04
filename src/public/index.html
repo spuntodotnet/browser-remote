@@ -468,12 +468,23 @@
     }).observe(stage);
 
     async function refreshTabs() {
+      let fresh;
       try {
-        tabs = await fetchTabs();
+        fresh = await fetchTabs();
       } catch (err) {
         console.error("refresh failed", err);
         return;
       }
+      // Chrome renvoie /json/list avec l'onglet actif en tête : on ignore cet
+      // ordre et on garde la position existante de chaque onglet, comme un
+      // vrai navigateur. Les nouveaux onglets sont ajoutés à la fin.
+      const freshById = new Map(fresh.map((t) => [t.id, t]));
+      const ordered = tabs.filter((t) => freshById.has(t.id)).map((t) => freshById.get(t.id));
+      const knownIds = new Set(ordered.map((t) => t.id));
+      for (const t of fresh) {
+        if (!knownIds.has(t.id)) ordered.push(t);
+      }
+      tabs = ordered;
       if (tabs.length === 0) {
         activeId = null;
         if (socket) socket.close();
