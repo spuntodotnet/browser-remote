@@ -1,103 +1,101 @@
 # browser-remote
 
-Image Docker autonome donnant un contrôle interactif à distance d'un
-navigateur headless (Chromium + Chrome DevTools Protocol) : une vraie barre
-d'onglets, un écran embarqué (canvas + `Page.startScreencast`, clics/clavier
-forwardés en direct), précédent/suivant/reload/adresse, et un bouton pour
-ouvrir les DevTools complètes si besoin d'inspection avancée.
+Standalone Docker image providing remote interactive control of a headless
+browser (Chromium + Chrome DevTools Protocol): a real tab bar, an embedded
+screen (canvas + `Page.startScreencast`, clicks/keyboard forwarded live),
+back/forward/reload/address bar, and a button to open full DevTools when
+advanced inspection is needed.
 
-Basée sur Chromium (licence BSD, `apt install chromium`) — pas de dépendance
-à browserless. Contexte technique complet et obstacles rencontrés pendant le
-prototypage : voir `rfc/0001-remote-browser-control.md` dans le repo
-`coderhammer/work`.
+Based on Chromium (BSD license, `apt install chromium`) — no dependency on
+browserless. Full technical context and obstacles encountered during
+prototyping: see `rfc/0001-remote-browser-control.md` in the
+`coderhammer/work` repo.
 
 ## Usage
 
-Image publiée automatiquement sur `main` (voir
-`.github/workflows/docker-publish.yml`) :
+Image published automatically on `main` (see
+`.github/workflows/docker-publish.yml`):
 
 ```bash
-docker run -p 3000:3000 ghcr.io/coderhammer/browser-remote:latest
+docker run -p 3000:3000 ghcr.io/spuntodotnet/browser-remote:latest
 ```
 
-Ou en local :
+Or locally:
 
 ```bash
 docker build -t browser-remote .
 docker run -p 3000:3000 browser-remote
 ```
 
-Puis ouvrir `http://localhost:3000/`.
+Then open `http://localhost:3000/`.
 
-Variables d'environnement :
+Environment variables:
 
-| Variable | Défaut | Usage |
+| Variable | Default | Usage |
 |---|---|---|
-| `PORT` | `3000` | Port d'écoute du serveur |
-| `CHROME_BIN` | `chromium` (`/usr/bin/chromium` dans l'image) | Binaire Chrome/Chromium |
-| `CHROME_USER_DATA_DIR` | `/tmp/chrome-profile` | Profil Chrome |
-| `EXTRA_CA_CERT_PATH` | `/certs/extra-ca.pem` | Voir "CA locale additionnelle" ci-dessous |
-| `ACTIVATE_STEALTH_PLUGIN` | désactivé | `true`/`1` pour activer `puppeteer-extra-plugin-stealth` (anti-fingerprinting, voir ci-dessous) |
+| `PORT` | `3000` | Server listening port |
+| `CHROME_BIN` | `chromium` (`/usr/bin/chromium` in the image) | Chrome/Chromium binary |
+| `CHROME_USER_DATA_DIR` | `/tmp/chrome-profile` | Chrome profile |
+| `EXTRA_CA_CERT_PATH` | `/certs/extra-ca.pem` | See "Additional local CA" below |
+| `ACTIVATE_STEALTH_PLUGIN` | disabled | `true`/`1` to enable `puppeteer-extra-plugin-stealth` (anti-fingerprinting, see below) |
 
-## CA locale additionnelle (HTTPS avec un certificat non public)
+## Additional local CA (HTTPS with a non-public certificate)
 
-Pour tester une app en HTTPS avec un certificat de CA locale (ex: `mkcert`)
-plutôt qu'un certificat public, monter le fichier de la CA (pas le
-certificat du site — la CA qui l'a signé) dans le conteneur et Chromium lui
-fera confiance au démarrage :
+To test an app over HTTPS with a certificate from a local CA (e.g. `mkcert`)
+rather than a public certificate, mount the CA file (not the site's
+certificate — the CA that signed it) into the container and Chromium will
+trust it at startup:
 
 ```bash
 docker run -p 3000:3000 \
   -v /path/to/rootCA.pem:/certs/extra-ca.pem:ro \
-  ghcr.io/coderhammer/browser-remote:latest
+  ghcr.io/spuntodotnet/browser-remote:latest
 ```
 
-No-op si le fichier n'est pas présent — comportement par défaut inchangé.
-Importée à la fois dans le store système (`update-ca-certificates`) et dans
-la base NSS de Chromium (`~/.pki/nssdb` via `certutil`) : Chromium sur Linux
-consulte les deux, une CA ajoutée seulement au store système n'est pas
-toujours suffisante.
+No-op if the file isn't present — default behavior unchanged. Imported both
+into the system store (`update-ca-certificates`) and into Chromium's NSS
+database (`~/.pki/nssdb` via `certutil`): Chromium on Linux consults both, a
+CA added only to the system store isn't always sufficient.
 
-## Anti-fingerprinting (optionnel)
+## Anti-fingerprinting (optional)
 
-`ACTIVATE_STEALTH_PLUGIN=true` active
-[`puppeteer-extra-plugin-stealth`](https://github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-stealth) :
-il patche divers signaux qui trahissent un Chrome headless (renderer WebGL
-`SwiftShader`, `navigator.webdriver`, `navigator.plugins` vide, `window.chrome`
-incomplet, User-Agent contenant `HeadlessChrome`, etc.) pour se rapprocher
-d'un Chrome desktop normal. Désactivé par défaut — comportement inchangé.
+`ACTIVATE_STEALTH_PLUGIN=true` enables
+[`puppeteer-extra-plugin-stealth`](https://github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-stealth):
+it patches various signals that give away a headless Chrome (`SwiftShader`
+WebGL renderer, `navigator.webdriver`, empty `navigator.plugins`, incomplete
+`window.chrome`, User-Agent containing `HeadlessChrome`, etc.) to look closer
+to a regular desktop Chrome. Disabled by default — behavior unchanged.
 
 ## API
 
-- `GET /api/tabs` — liste les onglets ouverts (`{id, title, url}[]`)
-- `POST /api/tabs` `{url}` — ouvre un nouvel onglet
-- `POST /api/tabs/:id/activate` — rend un onglet actif (`Target.activateTarget`)
-- `DELETE /api/tabs/:id` — ferme un onglet (`Target.closeTarget`)
-- `WS /api/tabs/:id/screencast` — flux de frames JPEG (`Page.startScreencast`)
-  + réception d'inputs souris/clavier et de commandes de navigation
-  (précédent/suivant/reload/adresse) pour cet onglet (`src/screencast.js`)
-- `/devtools/*`, `/json/*` — proxy passthrough vers le CDP interne de Chrome
-  (nécessaire pour le contrôle à distance ; réécrit le header `Host`, sinon
-  Chrome refuse toute requête dont le Host n'est pas `localhost`/une IP)
+- `GET /api/tabs` — lists open tabs (`{id, title, url}[]`)
+- `POST /api/tabs` `{url}` — opens a new tab
+- `POST /api/tabs/:id/activate` — makes a tab active (`Target.activateTarget`)
+- `DELETE /api/tabs/:id` — closes a tab (`Target.closeTarget`)
+- `WS /api/tabs/:id/screencast` — JPEG frame stream (`Page.startScreencast`)
+  + receives mouse/keyboard input and navigation commands
+  (back/forward/reload/address) for that tab (`src/screencast.js`)
+- `/devtools/*`, `/json/*` — passthrough proxy to Chrome's internal CDP
+  (needed for remote control; rewrites the `Host` header, since Chrome
+  refuses any request whose Host isn't `localhost`/an IP)
 
-## Pilotage par script (Puppeteer)
+## Scripting (Puppeteer)
 
-Le proxy `/json/*`/`/devtools/*` ci-dessus permet aussi de piloter la même
-instance Chrome depuis un script Puppeteer, en plus de (ou à la place de)
-l'interface web — les deux voient et peuvent créer les mêmes onglets, en
-temps réel, puisque c'est littéralement le même navigateur.
+The `/json/*`/`/devtools/*` proxy above also lets you drive the same Chrome
+instance from a Puppeteer script, in addition to (or instead of) the web
+UI — both see and can create the same tabs, in real time, since it's
+literally the same browser.
 
-**Piège** : ne pas utiliser `puppeteer.connect({ browserURL })` tel quel.
-Chrome annonce dans `/json/version` son propre WebSocket **interne**
-(`ws://127.0.0.1:9222/...`), pas joignable depuis l'extérieur du conteneur.
-Il faut récupérer ce endpoint via une requête HTTP normale (donc proxiée,
-avec le bon `Host`), puis reconstruire l'URL du WebSocket avec le host
-externe :
+**Gotcha**: don't use `puppeteer.connect({ browserURL })` as-is. Chrome
+advertises its own **internal** WebSocket in `/json/version`
+(`ws://127.0.0.1:9222/...`), not reachable from outside the container. You
+need to fetch that endpoint via a normal HTTP request (so, proxied, with the
+right `Host`), then rebuild the WebSocket URL with the external host:
 
 ```js
 import puppeteer from "puppeteer-core";
 
-const CHROME_URL = "http://localhost:3000"; // ou l'URL publique du conteneur
+const CHROME_URL = "http://localhost:3000"; // or the container's public URL
 
 const { webSocketDebuggerUrl } = await (await fetch(`${CHROME_URL}/json/version`)).json();
 const browserWSEndpoint = `${CHROME_URL.replace(/^http/, "ws")}${new URL(webSocketDebuggerUrl).pathname}`;
@@ -107,35 +105,34 @@ const page = await browser.newPage();
 await page.goto("https://example.com");
 await page.screenshot({ path: "out.png" });
 
-await browser.disconnect(); // laisse Chrome (et le conteneur) tourner
+await browser.disconnect(); // leaves Chrome (and the container) running
 ```
 
-`page.click()`/`page.type()`/etc. suffisent pour interagir directement avec
-la page ainsi ouverte — le screencast de l'UI web n'est utile que pour un
-pilotage *humain*, pas pour un script.
+`page.click()`/`page.type()`/etc. are enough to interact directly with the
+page opened this way — the web UI's screencast is only useful for *human*
+piloting, not for a script.
 
-**Piège `close()` vs `disconnect()`** : `browser.close()` envoie `Browser.close`
-et **tue le process Chrome du conteneur** (donc tous les onglets, y compris
-ceux ouverts depuis l'UI web) — c'est le comportement normal de Puppeteer
-pour un navigateur qu'il a lui-même lancé, mais surprenant ici puisqu'on se
-connecte à un navigateur qu'on ne possède pas. Toujours utiliser
-`browser.disconnect()` pour se détacher sans arrêter Chrome.
+**Gotcha, `close()` vs `disconnect()`**: `browser.close()` sends
+`Browser.close` and **kills the container's Chrome process** (so all tabs,
+including those opened from the web UI) — this is normal Puppeteer behavior
+for a browser it launched itself, but surprising here since we're connecting
+to a browser we don't own. Always use `browser.disconnect()` to detach
+without stopping Chrome.
 
-## Sécurité — important
+## Security — important
 
-**Aucune authentification en v1.** Quiconque atteint le port exposé a un
-contrôle total du navigateur (lecture/écriture de n'importe quelle page qui y
-est ouverte). Ne pas exposer ce service sur un réseau non fiable sans une
-protection additionnelle (reverse proxy avec auth, VPN, firewall...).
+**No authentication in v1.** Anyone reaching the exposed port has full
+control of the browser (read/write access to whatever page is open there).
+Do not expose this service on an untrusted network without additional
+protection (reverse proxy with auth, VPN, firewall...).
 
-Une session pilotée est un **vrai navigateur** : le rendu et les
-inputs (clic/clavier) sont deux pipelines CDP indépendants. Un clic mal placé
-(rendu pas encore chargé, mauvaise coordonnée) peut atterrir sur un vrai
-formulaire (identifiants, paiement...) sans retour visuel immédiat — observé
-en pratique pendant le prototypage (navigation involontaire vers un flow de
-connexion Google). Ne jamais saisir de vrais identifiants sans un retour
-visuel fiable de ce qui est affiché.
+A driven session is a **real browser**: rendering and inputs (click/keyboard)
+are two independent CDP pipelines. A misplaced click (rendering not yet
+loaded, wrong coordinates) can land on a real form (credentials, payment...)
+without immediate visual feedback — observed in practice during prototyping
+(unintended navigation into a Google login flow). Never enter real
+credentials without reliable visual feedback of what's displayed.
 
-Chromium tourne avec `--no-sandbox` (nécessaire en conteneur sans privilèges
-étendus) — ne pas naviguer vers du contenu non fiable avec cette instance en
-dehors d'un usage de test/dev.
+Chromium runs with `--no-sandbox` (needed in a container without extended
+privileges) — do not navigate to untrusted content with this instance
+outside of a test/dev use case.
