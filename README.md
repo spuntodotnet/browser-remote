@@ -37,6 +37,7 @@ Variables d'environnement :
 | `CHROME_BIN` | `chromium` (`/usr/bin/chromium` dans l'image) | Binaire Chrome/Chromium |
 | `CHROME_USER_DATA_DIR` | `/tmp/chrome-profile` | Profil Chrome |
 | `EXTRA_CA_CERT_PATH` | `/certs/extra-ca.pem` | Voir "CA locale additionnelle" ci-dessous |
+| `ACTIVATE_STEALTH_PLUGIN` | désactivé | `true`/`1` pour activer `puppeteer-extra-plugin-stealth` (anti-fingerprinting, voir ci-dessous) |
 
 ## CA locale additionnelle (HTTPS avec un certificat non public)
 
@@ -56,6 +57,15 @@ Importée à la fois dans le store système (`update-ca-certificates`) et dans
 la base NSS de Chromium (`~/.pki/nssdb` via `certutil`) : Chromium sur Linux
 consulte les deux, une CA ajoutée seulement au store système n'est pas
 toujours suffisante.
+
+## Anti-fingerprinting (optionnel)
+
+`ACTIVATE_STEALTH_PLUGIN=true` active
+[`puppeteer-extra-plugin-stealth`](https://github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-stealth) :
+il patche divers signaux qui trahissent un Chrome headless (renderer WebGL
+`SwiftShader`, `navigator.webdriver`, `navigator.plugins` vide, `window.chrome`
+incomplet, User-Agent contenant `HeadlessChrome`, etc.) pour se rapprocher
+d'un Chrome desktop normal. Désactivé par défaut — comportement inchangé.
 
 ## API
 

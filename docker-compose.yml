@@ -5,6 +5,7 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
+      - ACTIVATE_STEALTH_PLUGIN=true
     # Pour tester du HTTPS avec une CA locale (mkcert), décommenter et
     # ajuster le chemin vers ta CA (voir README.md) :
     # volumes:

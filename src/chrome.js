@@ -6,6 +6,8 @@ const CDP_PORT = 9222;
 const CHROME_BIN = process.env.CHROME_BIN || "chromium";
 const USER_DATA_DIR = process.env.CHROME_USER_DATA_DIR || "/tmp/chrome-profile";
 
+export const STEALTH_ENABLED = /^(1|true)$/i.test(process.env.ACTIVATE_STEALTH_PLUGIN || "");
+
 // Rendu logiciel forcé (sinon Page.startScreencast reste gris) et
 // --remote-allow-origins=* (sinon Chrome rejette toute connexion DevTools,
 // erreur "Rejected an incoming WebSocket connection..."). Voir le RFC dans le
@@ -22,6 +24,11 @@ const CHROME_ARGS = [
   "--use-angle=swiftshader",
   "--enable-unsafe-swiftshader",
   "--window-size=1512,982",
+  // puppeteer-extra-plugin-stealth pose ce flag lui-même via son hook
+  // `beforeLaunch`, qui ne se déclenche jamais ici puisque Chrome est démarré
+  // par `spawnChrome()` et non par puppeteer (on se contente de `.connect()`
+  // dans cdpClient.js) — on le reproduit donc à la main.
+  ...(STEALTH_ENABLED ? ["--disable-blink-features=AutomationControlled"] : []),
 ];
 
 export const CDP_BASE_URL = `http://${CDP_HOST}:${CDP_PORT}`;

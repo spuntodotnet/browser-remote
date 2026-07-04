@@ -1,5 +1,14 @@
-import puppeteer from "puppeteer-core";
-import { CDP_BASE_URL } from "./chrome.js";
+import puppeteerCore from "puppeteer-core";
+import { addExtra } from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import { CDP_BASE_URL, STEALTH_ENABLED } from "./chrome.js";
+
+// La plupart des évasions du plugin stealth s'accrochent à `onPageCreated`
+// (injection de script sur chaque nouveau document), ce qui fonctionne aussi
+// bien en `.connect()` qu'en `.launch()`. Seules celles basées sur
+// `beforeLaunch` (ex: navigator.webdriver) ne se déclenchent pas ici — voir
+// le flag ajouté à la main dans chrome.js.
+const puppeteer = STEALTH_ENABLED ? addExtra(puppeteerCore).use(StealthPlugin()) : puppeteerCore;
 
 let browserPromise = null;
 let sessionPromise = null;
