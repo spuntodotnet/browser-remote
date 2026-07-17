@@ -3,6 +3,20 @@ import { CDP_BASE_URL } from "./chrome.js";
 
 const CDP_WS_HOST = new URL(CDP_BASE_URL).host;
 
+// Onglets actuellement regardés par un humain (un screencast ouvert = un
+// viewer). Sert au mode co-pilotage de la couche agent ({tab:"active"}) : agir
+// sur l'onglet que l'humain a sous les yeux. Ordre d'insertion = le dernier
+// ajouté est le plus récemment ouvert.
+const viewedTabs = new Set();
+
+// targetId de l'onglet le plus récemment mis en avant-plan par un humain, ou
+// null si personne ne regarde. (Set préserve l'ordre d'insertion.)
+export function getActiveViewedTab() {
+  let last = null;
+  for (const id of viewedTabs) last = id;
+  return last;
+}
+
 // Pont entre le client (canvas + inputs + navigation) et le WebSocket CDP brut
 // de Chrome pour un onglet précis (ws://.../devtools/page/<id>) — pas de
 // Puppeteer ici : Page.startScreencast pousse des frames JPEG,
@@ -12,6 +26,10 @@ const CDP_WS_HOST = new URL(CDP_BASE_URL).host;
 // doit activer l'onglet avant/au moment d'ouvrir le screencast.
 export function attachScreencast(clientWs, targetId) {
   const chromeWs = new WebSocket(`ws://${CDP_WS_HOST}/devtools/page/${targetId}`);
+  // un viewer humain vient d'ouvrir cet onglet : le marquer comme regardé
+  // (re-insertion => devient le plus récent, cf getActiveViewedTab).
+  viewedTabs.delete(targetId);
+  viewedTabs.add(targetId);
   let msgId = 0;
   const pending = new Map();
 
@@ -96,6 +114,7 @@ export function attachScreencast(clientWs, targetId) {
   });
 
   clientWs.on("close", () => {
+    viewedTabs.delete(targetId);
     send("Page.stopScreencast");
     chromeWs.close();
   });

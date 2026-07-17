@@ -2,7 +2,7 @@
 // être appelés par une IA (ou le serveur MCP, src/agent/mcp.js, qui tape ces
 // mêmes fonctions). Voir src/agent/pageActions.js pour la logique.
 
-import { getPage } from "./browser.js";
+import { getPage, createTab, listTabs, closeTab } from "./browser.js";
 import * as actions from "./pageActions.js";
 
 // /eval exécute du JS arbitraire avec accès complet à la page Puppeteer —
@@ -40,8 +40,35 @@ export async function handleAgentRoute(req, res, pathname) {
 
   const route = pathname.slice("/api/agent".length) || "/";
   const body = req.method === "POST" ? await readBody(req) : {};
-  // `tab` (optionnel) cible un onglet précis ; sinon page courante.
-  const page = await getPage(body.tab);
+
+  // --- Gestion d'onglets (ne nécessite pas de page pré-résolue) -------------
+  // POST /tabs {url?}       -> crée un onglet dédié à l'agent, renvoie son id
+  // GET  /tabs              -> liste les onglets
+  // DELETE /tabs/:id        -> ferme un onglet
+  if (route === "/tabs" || route.startsWith("/tabs/")) {
+    try {
+      if (req.method === "POST" && route === "/tabs") {
+        return sendJson(res, 200, { ok: true, ...(await createTab(body.url)) });
+      }
+      if (req.method === "GET" && route === "/tabs") {
+        return sendJson(res, 200, { ok: true, tabs: await listTabs() });
+      }
+      if (req.method === "DELETE" && route.startsWith("/tabs/")) {
+        const id = decodeURIComponent(route.slice("/tabs/".length));
+        const closed = await closeTab(id);
+        return sendJson(res, closed ? 200 : 404, { ok: closed, error: closed ? undefined : `onglet introuvable: ${id}` });
+      }
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, error: err.message || String(err) });
+    }
+    return sendJson(res, 404, { ok: false, error: `route onglet inconnue: ${req.method} ${route}` });
+  }
+
+  // `tab` (optionnel) : "<id>" cible cet onglet, "active" l'onglet regardé par
+  // l'humain, absent = onglet par défaut. Accepté dans le corps (POST) OU en
+  // query `?tab=` (indispensable pour les verbes GET, sans corps).
+  const qTab = new URL(req.url, "http://localhost").searchParams.get("tab");
+  const page = await getPage(body.tab ?? qTab ?? undefined);
 
   try {
     switch (`${req.method} ${route}`) {

@@ -21,12 +21,45 @@ import { z } from "zod";
 
 const BASE = (process.env.BROWSER_REMOTE_URL || "http://localhost:3000").replace(/\/$/, "");
 
-// Appelle un verbe de la couche agent REST. GET pour les lectures sans corps.
-async function call(verb, body, method = "POST") {
+// Onglet ciblé par cette session MCP :
+//   - "active"      → l'onglet que l'humain regarde (co-pilotage)
+//   - un id         → un onglet précis
+//   - non défini    → l'agent s'ouvre SON PROPRE onglet à la 1ʳᵉ action
+//                     (autonomie : découplé de ce que l'humain regarde ;
+//                      plusieurs sessions = onglets distincts = parallèle).
+const FIXED_TAB = process.env.BROWSER_REMOTE_TAB || "";
+let ownTab = null;
+
+async function sessionTab() {
+  if (FIXED_TAB) return FIXED_TAB;
+  if (ownTab) return ownTab;
+  const r = await raw("tabs", {}, "POST"); // crée un onglet dédié
+  ownTab = r.tab;
+  console.error(`browser-remote MCP : onglet dédié ${ownTab}`);
+  return ownTab;
+}
+
+// Appel bas niveau (sans injection de tab) — pour la gestion d'onglets.
+async function raw(verb, body, method = "POST") {
   const res = await fetch(`${BASE}/api/agent/${verb}`, {
     method,
     headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
     body: method === "POST" ? JSON.stringify(body || {}) : undefined,
+  });
+  const json = await res.json().catch(() => ({ ok: false, error: `réponse non-JSON (HTTP ${res.status})` }));
+  if (json.ok === false) throw new Error(json.error || "échec de l'action");
+  return json;
+}
+
+// Appel d'un verbe d'action, ciblé sur l'onglet de la session (via ?tab=, qui
+// marche pour GET comme pour POST).
+async function call(verb, body, method = "POST") {
+  const tab = await sessionTab();
+  const qs = `?tab=${encodeURIComponent(tab)}`;
+  const res = await fetch(`${BASE}/api/agent/${verb}${qs}`, {
+    method,
+    headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+    body: method === "POST" ? JSON.stringify({ ...body, tab }) : undefined,
   });
   const json = await res.json().catch(() => ({ ok: false, error: `réponse non-JSON (HTTP ${res.status})` }));
   if (json.ok === false) throw new Error(json.error || "échec de l'action");
@@ -104,6 +137,38 @@ server.tool(
   async () => text(await call("ax", {}, "GET")),
 );
 
+server.tool(
+  "browser_list_tabs",
+  "Liste tous les onglets ouverts (id, url, titre) — y compris ceux d'autres " +
+    "sessions ou de l'humain. Cette session agit par défaut sur son propre onglet.",
+  {},
+  async () => text((await raw("tabs", null, "GET")).tabs),
+);
+
 const transport = new StdioServerTransport();
+
+// À la fin de la session, refermer l'onglet dédié qu'on a ouvert — ne pas
+// laisser fuiter des onglets dans le navigateur partagé. On NE ferme PAS un
+// onglet explicitement ciblé (FIXED_TAB : "active" ou un id fourni) qui ne nous
+// appartient pas. Déclenché par tous les chemins d'arrêt possibles (le client
+// peut fermer stdin OU tuer le process par signal), idempotent.
+let cleaning = false;
+async function cleanup() {
+  if (cleaning || !ownTab) return;
+  cleaning = true;
+  try {
+    await raw(`tabs/${encodeURIComponent(ownTab)}`, null, "DELETE");
+  } catch {
+    /* best-effort */
+  }
+}
+// Un hôte MCP ferme un serveur stdio en fermant stdin, puis SIGTERM, puis
+// SIGKILL — on couvre les deux premiers maillons (le 3ᵉ est non-interceptable).
+transport.onclose = () => cleanup().finally(() => process.exit(0));
+process.stdin.on("end", () => cleanup().finally(() => process.exit(0)));
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => cleanup().finally(() => process.exit(0)));
+}
+
 await server.connect(transport);
-console.error(`browser-remote MCP prêt → ${BASE}`);
+console.error(`browser-remote MCP prêt → ${BASE}${FIXED_TAB ? ` (tab=${FIXED_TAB})` : " (onglet dédié)"}`);

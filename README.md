@@ -104,17 +104,31 @@ interactive elements, each with a stable `ref` id, so the agent acts by `ref`
 | `GET /api/agent/ax` | — | compact accessibility tree (roles + names + values) |
 | `GET/POST /api/agent/screenshot` | `{fullPage?}` | PNG as base64 (`{mimeType, base64}`) |
 | `POST /api/agent/eval` | `{code}` | run arbitrary JS on the page — **disabled unless `AGENT_ENABLE_EVAL=1`** |
+| `POST /api/agent/tabs` | `{url?}` | open a **dedicated** tab, returns its `tab` id |
+| `GET /api/agent/tabs` | — | list open tabs (`[{tab, url, title}]`) |
+| `DELETE /api/agent/tabs/:tab` | — | close a tab |
 
-All verbs act on the current tab (shared with the human screencast, so agent and
-human co-drive the same page). Pass `{tab}` (a tab id from `/api/tabs`) to target
-a specific tab.
+### Tabs — autonomy and parallelism
+
+Every action verb takes an optional **`tab`** (in the body, or `?tab=` for GET
+requests). This is what makes independent, parallel work possible on a single
+shared browser:
+
+- **Dedicated tab (autonomy)** — `POST /api/agent/tabs` gives the agent its own
+  tab id; it passes `{tab}` on every call. Fully decoupled from what the human is
+  looking at: the human can switch tabs in the nested-browser UI without
+  disturbing the agent, and the agent reads/clicks/screenshots its **background**
+  tab without stealing focus. Several agents → several tabs → real parallelism
+  (Chrome drives each tab independently).
+- **Co-drive** — `{tab: "active"}` acts on the tab the human is currently watching
+  (the one with an open screencast). Omitting `tab` uses a default tab.
 
 ```bash
 BASE=http://localhost:3000
-curl -s -X POST $BASE/api/agent/navigate -d '{"url":"https://example.com"}'
-curl -s $BASE/api/agent/snapshot           # -> elements[].ref
-curl -s -X POST $BASE/api/agent/click -d '{"ref":"e0"}'
-curl -s -X POST $BASE/api/agent/type  -d '{"field":"q","value":"hello","submit":true}'
+TAB=$(curl -s -X POST $BASE/api/agent/tabs -d '{"url":"https://example.com"}' | jq -r .tab)
+curl -s "$BASE/api/agent/snapshot?tab=$TAB"          # -> elements[].ref
+curl -s -X POST $BASE/api/agent/click -d "{\"ref\":\"e0\",\"tab\":\"$TAB\"}"
+curl -s -X POST $BASE/api/agent/type  -d "{\"field\":\"q\",\"value\":\"hi\",\"submit\":true,\"tab\":\"$TAB\"}"
 ```
 
 The verbs live in `src/agent/` and can be exercised standalone against a remote
@@ -125,9 +139,17 @@ npm run agent-dev`.
 
 `mcp/server.js` is a Model Context Protocol server (stdio) that exposes the agent
 API as auto-discoverable tools (`browser_snapshot`, `browser_navigate`,
-`browser_click`, `browser_type`, `browser_screenshot`, `browser_read_ax`). Any
-MCP-capable agent (Claude Code/Desktop, etc.) picks them up with no glue code. It
-bridges to a running browser-remote via `BROWSER_REMOTE_URL`.
+`browser_click`, `browser_type`, `browser_screenshot`, `browser_read_ax`,
+`browser_list_tabs`). Any MCP-capable agent (Claude Code/Desktop, etc.) picks
+them up with no glue code. It bridges to a running browser-remote via
+`BROWSER_REMOTE_URL`.
+
+**Each MCP session opens and pins its own dedicated tab** on first use, so
+multiple agents (or multiple Claude Code windows) work in parallel without
+stepping on each other, independently of what the human is viewing. The tab is
+closed automatically when the session ends. Set `BROWSER_REMOTE_TAB=active` to
+co-drive the human's current tab instead, or `BROWSER_REMOTE_TAB=<id>` for a
+specific one.
 
 ```json
 {
