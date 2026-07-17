@@ -13,14 +13,39 @@ const puppeteer = STEALTH_ENABLED ? addExtra(puppeteerCore).use(StealthPlugin())
 let browserPromise = null;
 let sessionPromise = null;
 
-async function getSession() {
+// Dev uniquement : cibler le Chrome d'un conteneur browser-remote DISTANT
+// (ex: le service déployé, http://browser-remote:3000) pour tester la couche
+// agent sans rebuild d'image. Chrome annonce son ws interne (127.0.0.1:9222)
+// dans /json/version — non joignable de l'extérieur — donc on reconstruit
+// l'URL ws avec le host externe (qui, lui, est proxié avec le Host rewriting
+// nécessaire). Absent en prod → on se connecte au Chrome local via browserURL.
+const EXTERNAL_CDP_URL = process.env.CDP_EXTERNAL_URL || "";
+
+async function connectArgs() {
+  if (!EXTERNAL_CDP_URL) return { browserURL: CDP_BASE_URL };
+  const res = await fetch(`${EXTERNAL_CDP_URL}/json/version`);
+  const { webSocketDebuggerUrl } = await res.json();
+  const path = new URL(webSocketDebuggerUrl).pathname;
+  return { browserWSEndpoint: `${EXTERNAL_CDP_URL.replace(/^http/, "ws")}${path}` };
+}
+
+// Connexion Puppeteer partagée vers le Chrome du conteneur. Réutilisée par la
+// gestion des onglets (getSession, plus bas) ET par la couche agent
+// (src/agent/*) — une seule connexion `.connect()` pour tout le process.
+export async function getBrowser() {
   if (browserPromise) {
     const browser = await browserPromise;
-    if (browser.connected) return sessionPromise;
+    if (browser.connected) return browser;
+    // reconnexion : la session CDP en cache est morte avec l'ancien browser.
+    sessionPromise = null;
   }
-  browserPromise = puppeteer.connect({ browserURL: CDP_BASE_URL });
-  const browser = await browserPromise;
-  sessionPromise = browser.target().createCDPSession();
+  browserPromise = puppeteer.connect(await connectArgs());
+  return browserPromise;
+}
+
+async function getSession() {
+  const browser = await getBrowser();
+  if (!sessionPromise) sessionPromise = browser.target().createCDPSession();
   return sessionPromise;
 }
 

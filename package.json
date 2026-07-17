@@ -6,9 +6,15 @@
   "description": "Contrôle interactif à distance d'un navigateur headless (CDP/DevTools)",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "mcp": "node mcp/server.js",
+    "agent-dev": "node src/agent/standalone.js"
+  },
+  "bin": {
+    "browser-remote-mcp": "mcp/server.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "http-proxy": "^1.18.1",
     "puppeteer-core": "^24.0.0",
     "puppeteer-extra": "^3.3.6",
