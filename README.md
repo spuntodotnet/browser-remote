@@ -38,6 +38,8 @@ Environment variables:
 | `CHROME_USER_DATA_DIR` | `/tmp/chrome-profile` | Chrome profile |
 | `EXTRA_CA_CERT_PATH` | `/certs/extra-ca.pem` | See "Additional local CA" below |
 | `ACTIVATE_STEALTH_PLUGIN` | disabled | `true`/`1` to enable `puppeteer-extra-plugin-stealth` (anti-fingerprinting, see below) |
+| `AGENT_ENABLE_EVAL` | disabled | `true`/`1` to enable `POST /api/agent/eval` (arbitrary JS — see "Agent API") |
+| `CDP_EXTERNAL_URL` | — | dev only: point the agent layer at a **remote** container's Chrome (e.g. `npm run agent-dev`) |
 
 ## Additional local CA (HTTPS with a non-public certificate)
 
@@ -78,6 +80,90 @@ to a regular desktop Chrome. Disabled by default — behavior unchanged.
 - `/devtools/*`, `/json/*` — passthrough proxy to Chrome's internal CDP
   (needed for remote control; rewrites the `Host` header, since Chrome
   refuses any request whose Host isn't `localhost`/an IP)
+
+## Agent API — high-level verbs for AI agents
+
+Raw CDP is awkward for an AI agent to drive: it has to reason about selectors,
+shadow DOM, pixel scaling, and keyboard interception itself. The **agent API**
+(`/api/agent/*`) wraps all that into a handful of high-level verbs, and encodes
+the recurring gotchas once (shadow-DOM traversal, CSS pixels == screenshot
+pixels, values set via the native DOM setter so global keyboard shortcuts can't
+intercept them).
+
+The centerpiece is the **snapshot-with-refs** model: one call returns the page's
+interactive elements, each with a stable `ref` id, so the agent acts by `ref`
+(unambiguous) instead of guessing a selector or text.
+
+| Endpoint | Body | Does |
+|---|---|---|
+| `GET /api/agent/status` | — | current url/title, whether eval is enabled |
+| `POST /api/agent/navigate` | `{url}` | go to a URL, wait for load |
+| `GET/POST /api/agent/snapshot` | `{withText?}` | `{url, title, elements:[{ref,tag,role,name,value,x,y,w,h,onscreen}], text}` — **call before clicking/typing** |
+| `POST /api/agent/click` | `{ref}` \| `{text,exact?,nth?}` \| `{x,y}` | click (prefer `ref` from a snapshot) |
+| `POST /api/agent/type` | `{value, ref\|selector\|field, submit?}` | fill a field (native setter), optionally press Enter |
+| `GET /api/agent/ax` | — | compact accessibility tree (roles + names + values) |
+| `GET/POST /api/agent/screenshot` | `{fullPage?}` | PNG as base64 (`{mimeType, base64}`) |
+| `POST /api/agent/eval` | `{code}` | run arbitrary JS on the page — **disabled unless `AGENT_ENABLE_EVAL=1`** |
+| `POST /api/agent/tabs` | `{url?}` | open a **dedicated** tab, returns its `tab` id |
+| `GET /api/agent/tabs` | — | list open tabs (`[{tab, url, title}]`) |
+| `DELETE /api/agent/tabs/:tab` | — | close a tab |
+
+### Tabs — autonomy and parallelism
+
+Every action verb takes an optional **`tab`** (in the body, or `?tab=` for GET
+requests). This is what makes independent, parallel work possible on a single
+shared browser:
+
+- **Dedicated tab (autonomy)** — `POST /api/agent/tabs` gives the agent its own
+  tab id; it passes `{tab}` on every call. Fully decoupled from what the human is
+  looking at: the human can switch tabs in the nested-browser UI without
+  disturbing the agent, and the agent reads/clicks/screenshots its **background**
+  tab without stealing focus. Several agents → several tabs → real parallelism
+  (Chrome drives each tab independently).
+- **Co-drive** — `{tab: "active"}` acts on the tab the human is currently watching
+  (the one with an open screencast). Omitting `tab` uses a default tab.
+
+```bash
+BASE=http://localhost:3000
+TAB=$(curl -s -X POST $BASE/api/agent/tabs -d '{"url":"https://example.com"}' | jq -r .tab)
+curl -s "$BASE/api/agent/snapshot?tab=$TAB"          # -> elements[].ref
+curl -s -X POST $BASE/api/agent/click -d "{\"ref\":\"e0\",\"tab\":\"$TAB\"}"
+curl -s -X POST $BASE/api/agent/type  -d "{\"field\":\"q\",\"value\":\"hi\",\"submit\":true,\"tab\":\"$TAB\"}"
+```
+
+The verbs live in `src/agent/` and can be exercised standalone against a remote
+container (dev, no image rebuild): `CDP_EXTERNAL_URL=http://the-container:3000
+npm run agent-dev`.
+
+## MCP server — plug the browser into an AI agent in one line
+
+`mcp/server.js` is a Model Context Protocol server (stdio) that exposes the agent
+API as auto-discoverable tools (`browser_snapshot`, `browser_navigate`,
+`browser_click`, `browser_type`, `browser_screenshot`, `browser_read_ax`,
+`browser_list_tabs`). Any MCP-capable agent (Claude Code/Desktop, etc.) picks
+them up with no glue code. It bridges to a running browser-remote via
+`BROWSER_REMOTE_URL`.
+
+**Each MCP session opens and pins its own dedicated tab** on first use, so
+multiple agents (or multiple Claude Code windows) work in parallel without
+stepping on each other, independently of what the human is viewing. The tab is
+closed automatically when the session ends. Set `BROWSER_REMOTE_TAB=active` to
+co-drive the human's current tab instead, or `BROWSER_REMOTE_TAB=<id>` for a
+specific one.
+
+```json
+{
+  "mcpServers": {
+    "browser": {
+      "command": "npx",
+      "args": ["-y", "browser-remote-mcp"],
+      "env": { "BROWSER_REMOTE_URL": "http://localhost:3000" }
+    }
+  }
+}
+```
+
+(or `"command": "node", "args": ["mcp/server.js"]` from a checkout).
 
 ## Scripting (Puppeteer)
 
