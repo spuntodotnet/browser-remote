@@ -29,4 +29,15 @@ if [ -f "$CA_FILE" ]; then
   certutil -A -n "extra-ca" -t "C,," -i "$CA_FILE" -d "sql:$NSSDB" < /dev/null
 fi
 
+# Chromium écrit un SingletonLock dans le profil (symlink `<hostname>-<pid>`).
+# Sur un profil PERSISTANT (volume), un conteneur recréé a un nouveau hostname
+# → le nouveau Chromium voit un lock « appartenant à un autre ordinateur » et
+# REFUSE de démarrer ("profile appears to be in use by another Chromium process
+# on another computer", exit 21) — le serveur ne démarre alors jamais. Après un
+# arrêt propre Chromium retire ce lock, mais pas après un kill/recreate (cas du
+# redeploy). Un conteneur qui vient de démarrer n'a aucun Chromium en cours, donc
+# tout Singleton* présent est forcément résiduel : on le purge avant de lancer.
+PROFILE_DIR="${CHROME_USER_DATA_DIR:-/tmp/chrome-profile}"
+rm -f "$PROFILE_DIR"/SingletonLock "$PROFILE_DIR"/SingletonSocket "$PROFILE_DIR"/SingletonCookie 2>/dev/null || true
+
 exec "$@"
